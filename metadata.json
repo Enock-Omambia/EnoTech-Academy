@@ -1,0 +1,6 @@
+{
+  "name": "EnoTech Academy",
+  "description": "State-of-the-art Educational Management & Learning System featuring comprehensive student records, multi-role portals, attendance trackers, finance modules, certificate verification, code playgrounds, and interactive AI tutoring.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
