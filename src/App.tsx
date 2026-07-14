@@ -49,11 +49,20 @@ import {
   Send,
   AlertTriangle,
   Camera,
-  Cpu
+  Cpu,
+  Info,
+  CheckSquare,
+  AlertCircle,
+  Video,
+  ClipboardList,
+  Milestone,
+  Compass,
+  Code
 } from "lucide-react";
 
 import { EnoTechDatabase } from "./components/MockDatabase";
 import { NEW_UNIVERSITY_COURSES } from "./data/newCourses";
+import { getCourseCurriculumData } from "./utils/curriculumHelper";
 import {
   UserRole,
   LearningMode,
@@ -181,6 +190,21 @@ export default function App() {
   const [generatedQuiz, setGeneratedQuiz] = useState<any>(null);
   const [userQuizAnswers, setUserQuizAnswers] = useState<number[]>([]);
   const [quizSubmitted, setQuizSubmitted] = useState<boolean>(false);
+
+  // Interactive Curriculum 16-Step States
+  const [activeCurriculumTab, setActiveCurriculumTab] = useState<string>("overview");
+  const [completedObjectives, setCompletedObjectives] = useState<string[]>([]);
+  const [checkedKnowledge, setCheckedKnowledge] = useState<number | null>(null);
+  const [quizScores, setQuizScores] = useState<Record<string, { score: number; total: number; submitted: boolean }>>({});
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, Record<number, number>>>({}); // courseId -> questionIdx -> answerIdx
+  const [codingSandboxCode, setCodingSandboxCode] = useState<string>("");
+  const [codingSandboxOutput, setCodingSandboxOutput] = useState<string>("");
+  const [isCodingRunning, setIsCodingRunning] = useState<boolean>(false);
+  const [practicalSubmissions, setPracticalSubmissions] = useState<Record<string, { textAnswer: string; fileName?: string; submitted: boolean; graded: boolean; score?: number }>>({});
+  const [assessmentAnswers, setAssessmentAnswers] = useState<Record<string, Record<number, number>>>({}); // courseId -> questionIdx -> answerIdx
+  const [assessmentSubmitted, setAssessmentSubmitted] = useState<Record<string, boolean>>({});
+  const [terminalLogs, setTerminalLogs] = useState<string[]>(["EnoTech Virtual Lab Console v1.0.0", "Type 'help' to view available commands.", ""]);
+  const [terminalInput, setTerminalInput] = useState<string>("");
 
   // Chat/AI Tutor State
   const [chatMessage, setChatMessage] = useState<string>("");
@@ -329,6 +353,174 @@ export default function App() {
     } catch (err) {
       console.error("[PWA] Installation prompt failed:", err);
     }
+  };
+
+  // Interactive Curriculum Handlers
+  const handleTerminalSubmit = (cmd: string) => {
+    if (!cmd.trim()) return;
+    const newLogs = [...terminalLogs, `user@enotech:~$ ${cmd}`];
+    const command = cmd.toLowerCase().trim();
+    if (command === "help") {
+      newLogs.push(
+        "Available commands:",
+        "  help              Show this help menu",
+        "  clear             Clear the screen",
+        "  ls                List files in the lab workspace",
+        "  cat <file>        View contents of a file",
+        "  run               Execute the lab test suite",
+        "  status            Get status of services"
+      );
+    } else if (command === "clear") {
+      setTerminalLogs([]);
+      setTerminalInput("");
+      return;
+    } else if (command === "ls") {
+      newLogs.push("index.js   package.json   README.md   lab_test.spec.js");
+    } else if (command.startsWith("cat ")) {
+      const file = cmd.substring(4).trim();
+      if (file === "README.md") {
+        newLogs.push(
+          "# LAB INSTRUCTIONS",
+          "Write an algorithm to validate security tokens. Run 'npm test' or the 'run' command to verify."
+        );
+      } else {
+        newLogs.push(`cat: ${file}: File not found or permission denied`);
+      }
+    } else if (command === "run") {
+      newLogs.push(
+        "Running test suite...",
+        "✓ Test Case 1: Initialize connection - PASSED",
+        "✓ Test Case 2: Handshake handshake - PASSED",
+        "✓ Test Case 3: Token validation - PASSED",
+        "STATUS: 100% SUCCESS. Lab assignment complete!"
+      );
+    } else if (command === "status") {
+      newLogs.push("Virtual Server: ONLINE", "Database Engine: ACTIVE", "Firewall: RUNNING");
+    } else {
+      newLogs.push(`bash: command not found: ${cmd}. Type 'help' for suggestions.`);
+    }
+    setTerminalLogs([...newLogs, ""]);
+    setTerminalInput("");
+  };
+
+  const handleRunCodingChallenge = (userCode?: string, expectedOutput?: string) => {
+    setIsCodingRunning(true);
+    setCodingSandboxOutput("Running code...\n");
+    setTimeout(() => {
+      setIsCodingRunning(false);
+      setCodingSandboxOutput(
+        "Compiler initialized...\nExecuting code...\n\n" +
+        "=== TEST EXECUTION REPORT ===\n" +
+        "Test Case 1 (Correct Signature): PASSED\n" +
+        "Test Case 2 (Edge Inputs): PASSED\n" +
+        "Test Case 3 (Security Injection Shield): PASSED\n" +
+        "-------------------------------------\n" +
+        "STATUS: SUCCESS\n" +
+        "Congratulations! Your challenge solution is correct and matches our automated verification schemas."
+      );
+    }, 1200);
+  };
+
+  const handleQuizAnswerSelect = (questionIdx: number, optionIdx: number) => {
+    if (!activeLMSCourse) return;
+    const courseId = activeLMSCourse.id;
+    setQuizAnswers(prev => ({
+      ...prev,
+      [courseId]: {
+        ...(prev[courseId] || {}),
+        [questionIdx]: optionIdx
+      }
+    }));
+  };
+
+  const handleQuizSubmit = (quizQuestions?: any[]) => {
+    if (!activeLMSCourse) return;
+    const courseId = activeLMSCourse.id;
+    const curriculumData = getCourseCurriculumData(activeLMSCourse);
+    const questions = quizQuestions || curriculumData.quizzes;
+    const answers = quizAnswers[courseId] || {};
+    let score = 0;
+    questions.forEach((q, idx) => {
+      if (answers[idx] === q.answerIndex) {
+        score++;
+      }
+    });
+    setQuizScores(prev => ({
+      ...prev,
+      [courseId]: {
+        score,
+        total: questions.length,
+        submitted: true
+      }
+    }));
+  };
+
+  const handleAssignmentFileUpload = (fileName: string) => {
+    if (!activeLMSCourse) return;
+    const courseId = activeLMSCourse.id;
+    setPracticalSubmissions(prev => ({
+      ...prev,
+      [courseId]: {
+        ...(prev[courseId] || { textAnswer: "", submitted: false, graded: false }),
+        fileName,
+        submitted: true,
+        graded: true,
+        score: 95
+      }
+    }));
+  };
+
+  const handleAssessmentAnswerSelect = (questionIdx: number, optionIdx: number) => {
+    if (!activeLMSCourse) return;
+    const courseId = activeLMSCourse.id;
+    setAssessmentAnswers(prev => ({
+      ...prev,
+      [courseId]: {
+        ...(prev[courseId] || {}),
+        [questionIdx]: optionIdx
+      }
+    }));
+  };
+
+  const handleAssessmentSubmit = (assessmentQuestions?: any[]) => {
+    if (!activeLMSCourse) return;
+    const courseId = activeLMSCourse.id;
+    setAssessmentSubmitted(prev => ({
+      ...prev,
+      [courseId]: true
+    }));
+    
+    // Automatically issue a Certificate for the student!
+    const currentStudentId = students[0]?.id || "STUD-001";
+    const certNumber = "ET-CERT-" + Math.floor(100000 + Math.random() * 900000);
+    const newCert: Certificate = {
+      certificateNumber: certNumber,
+      studentId: currentStudentId,
+      studentName: students[0]?.fullName || "Enock Omato",
+      courseId: activeLMSCourse.id,
+      courseName: activeLMSCourse.name,
+      issueDate: new Date().toISOString().split("T")[0],
+      verificationUrl: `https://academy.enotech.com/verify/${certNumber}`,
+      qrCodeData: `VERIFIED: ${certNumber} | STUDENT ID: ${currentStudentId} | COURSE: ${activeLMSCourse.name} | GRADE: A`,
+      status: "Valid",
+      signatures: {
+        principal: "Mr. Enock Omato",
+        instructor: activeLMSCourse.instructorName || "Senior Cyber Security Lead"
+      }
+    };
+    
+    EnoTechDatabase.issueCertificate(newCert);
+    setCertificates(EnoTechDatabase.getCertificates());
+    
+    EnoTechDatabase.addLog(
+      "System",
+      "AI Grading Engine",
+      "CERTIFICATE_ISSUED",
+      `Issued certificate ${certNumber} to student for completing ${activeLMSCourse.name}.`
+    );
+    setLogs(EnoTechDatabase.getLogs());
+    
+    alert(`Congratulations! You passed the Final Assessment! A Certificate of Completion (${certNumber}) has been successfully issued to your academic account.`);
   };
 
   // Student Registration submission
@@ -1821,6 +2013,10 @@ export default function App() {
                     setActiveLMSCourse(course);
                     setActiveLMSModuleIdx(0);
                     setActiveLMSLessonIdx(0);
+                    setActiveCurriculumTab("overview");
+                    setCheckedKnowledge(null);
+                    setCodingSandboxCode("");
+                    setCodingSandboxOutput("");
                   }}
                   onMassInjectUniversityLibrary={() => {
                     const updated = EnoTechDatabase.massInjectCourses(NEW_UNIVERSITY_COURSES);
@@ -1834,364 +2030,1143 @@ export default function App() {
                     setLogs(EnoTechDatabase.getLogs());
                   }}
                 />
-              ) : (
+              ) : (() => {
+                const curriculumData = getCourseCurriculumData(activeLMSCourse);
+                const isCertUnlocked = assessmentSubmitted[activeLMSCourse.id] || Object.keys(lmsCompletedLessons).length >= 2;
                 
-                /* ACTIVE E-LEARNING WORKSPACE */
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                  
-                  {/* Left Column: Lecture Videos & Documents */}
-                  <div className="lg:col-span-3 space-y-6">
-                    
-                    {/* Lesson Workspace Header */}
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => setActiveLMSCourse(null)}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-md text-xs font-bold"
-                      >
-                        ← Back to Catalog
-                      </button>
-                      <div>
-                        <span className="text-xs font-bold text-cyan-400">{activeLMSCourse.name}</span>
-                        <h2 className="text-sm font-extrabold tracking-tight">{currentLMSLesson?.title || "No Active Lesson"}</h2>
+                // Grouped curriculum navigation steps
+                const curriculumStepGroups = [
+                  {
+                    group: "Academic Track Info",
+                    items: [
+                      { id: "overview", label: "Course Overview", icon: Info },
+                      { id: "objectives", label: "Learning Objectives", icon: CheckSquare },
+                      { id: "prerequisites", label: "Prerequisites", icon: AlertCircle },
+                      { id: "next-course", label: "Suggested Next Course", icon: Compass },
+                    ]
+                  },
+                  {
+                    group: "Study Materials",
+                    items: [
+                      { id: "lessons", label: "Interactive Lessons", icon: Video },
+                      { id: "reading", label: "Reading Materials", icon: BookOpen },
+                      { id: "resources", label: "Downloadable Resources", icon: Download },
+                      { id: "ai-mentor", label: "AI Mentor Assistance", icon: Sparkles },
+                      { id: "labs", label: "Hands-on Labs", icon: Terminal },
+                    ]
+                  },
+                  {
+                    group: "Evaluations & Practice",
+                    items: [
+                      { id: "challenges", label: "Coding Challenges", icon: Code },
+                      { id: "knowledge", label: "Knowledge Checks", icon: HelpCircle },
+                      { id: "quizzes", label: "Module Quizzes", icon: Clock },
+                      { id: "assignments", label: "Practical Assignments", icon: ClipboardList },
+                    ]
+                  },
+                  {
+                    group: "Graduation",
+                    items: [
+                      { id: "capstone", label: "Final Capstone Project", icon: Award },
+                      { id: "assessment", label: "Final Assessment", icon: FileText },
+                      { id: "certificate", label: "Certificate of Completion", icon: GraduationCap },
+                    ]
+                  }
+                ];
+
+                const currentLMSLesson = activeLMSCourse.modules[activeLMSModuleIdx]?.lessons[activeLMSLessonIdx];
+
+                return (
+                  <div className="space-y-6">
+                    {/* Course Banner / Back Control */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-blue-900/40 via-cyan-900/20 to-slate-900 border border-slate-800/60 shadow-xl">
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => setActiveLMSCourse(null)}
+                          className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          ← Back to Catalog
+                        </button>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 font-mono">{activeLMSCourse.id}</span>
+                          <h2 className="text-base font-extrabold text-white tracking-tight">{activeLMSCourse.name}</h2>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Lesson Display Panel */}
-                    <div className={`border rounded-xl overflow-hidden shadow-lg ${
-                      darkMode ? "bg-[#0d1322] border-slate-800" : "bg-white border-slate-100"
-                    }`}>
-                      {currentLMSLesson?.type === "video" ? (
-                        downloadedLessons.includes(currentLMSLesson.id) ? (
-                          /* OFFLINE INTEGRATED PLAYER NODE */
-                          <div className="relative aspect-video bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-6 flex flex-col justify-between overflow-hidden group select-none">
-                            {/* Scanning/Ambient backdrop overlays */}
-                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(6,182,212,0.1),transparent_50%)]"></div>
-                            <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-10">
-                              <span className="px-2.5 py-1 bg-cyan-500/10 border border-cyan-400/20 text-cyan-400 rounded text-[9px] font-extrabold uppercase tracking-widest flex items-center gap-1.5 shadow-sm">
-                                <WifiOff className="w-3 h-3 text-cyan-400 animate-pulse" /> OFFLINE PLAYBACK SYSTEM ACTIVE
-                              </span>
-                              <span className="text-[10px] font-bold text-slate-500 font-mono">
-                                local_cache_{currentLMSLesson.id}.bin
-                              </span>
-                            </div>
-
-                            {/* Centered Large Play Controls */}
-                            <div className="flex-1 flex flex-col items-center justify-center space-y-3 z-10">
-                              <button
-                                onClick={() => setOfflinePlaying(!offlinePlaying)}
-                                className={`w-16 h-16 rounded-full flex items-center justify-center shadow-xl transition-all border transform hover:scale-105 active:scale-95 ${
-                                  offlinePlaying 
-                                    ? "bg-slate-850 border-cyan-500/30 text-cyan-400 hover:bg-slate-800" 
-                                    : "bg-cyan-500 border-cyan-400 text-slate-950 hover:bg-cyan-400"
-                                }`}
-                              >
-                                {offlinePlaying ? (
-                                  <div className="flex gap-1.5 items-center justify-center">
-                                    <span className="w-1.5 h-6 bg-cyan-400 rounded animate-pulse"></span>
-                                    <span className="w-1.5 h-6 bg-cyan-400 rounded animate-pulse delay-75"></span>
-                                  </div>
-                                ) : (
-                                  <Play className="w-7 h-7 fill-slate-950 ml-1" />
-                                )}
-                              </button>
-                              <span className="text-[11px] font-extrabold text-slate-400 tracking-wide uppercase">
-                                {offlinePlaying ? "Playing offline lecture track..." : "Offline Video Lecture Loaded"}
-                              </span>
-                            </div>
-
-                            {/* Timeline & Progress Bar */}
-                            <div className="space-y-2 z-10">
-                              <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono">
-                                <span>{Math.floor((offlineProgress * 12) / 60)}:{(offlineProgress * 12) % 60 < 10 ? "0" : ""}{(offlineProgress * 12) % 60}</span>
-                                <span className="text-cyan-400">offline source • 100% synced</span>
-                                <span>{currentLMSLesson.duration || "10:00"}</span>
-                              </div>
-                              <div className="relative w-full h-1.5 bg-slate-850 rounded-full overflow-hidden cursor-pointer">
-                                <div 
-                                  className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300" 
-                                  style={{ width: `${offlineProgress}%` }}
-                                ></div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="relative aspect-video bg-black">
-                            <iframe
-                              title="lms-video"
-                              src={currentLMSLesson.url}
-                              className="w-full h-full border-none"
-                              allowFullScreen
-                            />
-                          </div>
-                        )
-                      ) : (
-                        <div className="p-8 space-y-4">
-                          <div className="flex items-center gap-2 text-blue-500">
-                            <FileText className="w-6 h-6" />
-                            <h3 className="font-bold text-sm">Interactive Syllabus Document</h3>
-                          </div>
-                          <p className="text-xs leading-relaxed text-slate-300">
-                            {currentLMSLesson?.content || "No document loaded for this lecture."}
-                          </p>
+                      {/* Global course progress gauge */}
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block font-bold">SYLLABUS PROGRESS</span>
+                          <span className="text-xs font-black text-cyan-400 font-mono">
+                            {Math.round(((lmsCompletedLessons.filter(l => l.startsWith(activeLMSCourse.id)).length + (isCertUnlocked ? 1 : 0)) / 3) * 100)}%
+                          </span>
                         </div>
-                      )}
-
-                      {/* Video Speed and Action bar */}
-                      <div className="p-4 bg-slate-950/60 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4">
-                        <div className="flex items-center gap-3 text-xs">
-                          <span className="text-slate-400">Speed Control:</span>
-                          <div className="flex gap-1.5">
-                            {[1, 1.25, 1.5, 2].map((sp) => (
-                              <button
-                                key={sp}
-                                onClick={() => setVideoPlaybackSpeed(sp)}
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                  videoPlaybackSpeed === sp ? "bg-cyan-500 text-slate-950" : "bg-slate-800 text-slate-400"
-                                }`}
-                              >
-                                {sp}x
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {/* OFFLINE DOWNLOAD ACTION TRIGGERS */}
-                          {currentLMSLesson && (
-                            downloadedLessons.includes(currentLMSLesson.id) ? (
-                              <span className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-md text-xs font-bold flex items-center gap-1 shadow-sm">
-                                <CheckCircle className="w-3.5 h-3.5 text-cyan-400" /> Offline Downloaded
-                              </span>
-                            ) : isDownloadingLesson === currentLMSLesson.id ? (
-                              <button
-                                disabled
-                                className="px-3 py-1.5 bg-slate-800 text-slate-400 rounded-md text-xs font-bold flex items-center gap-1.5"
-                              >
-                                <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" /> Caching Local Node (64%)...
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => {
-                                  setIsDownloadingLesson(currentLMSLesson.id);
-                                  setTimeout(() => {
-                                    setDownloadedLessons((prev) => [...prev, currentLMSLesson.id]);
-                                    setIsDownloadingLesson(null);
-                                    alert(`Lecture "${currentLMSLesson.title}" downloaded and stored in offline localStorage node memory cache!`);
-                                  }, 1200);
-                                }}
-                                className="px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-md text-xs font-bold flex items-center gap-1 shadow transition-all cursor-pointer"
-                              >
-                                <Download className="w-3.5 h-3.5" /> Download Offline
-                              </button>
-                            )
-                          )}
-
-                          <button
-                            onClick={() => {
-                              const bmk = `Bookmark: ${currentLMSLesson?.title} (${new Date().toLocaleTimeString()})`;
-                              setLmsBookmarks((p) => [...p, bmk]);
-                              alert("Video Bookmark Saved at timestamp!");
-                            }}
-                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-bold cursor-pointer"
-                          >
-                            🔖 Add Bookmark
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (currentLMSLesson) {
-                                setLmsCompletedLessons((p) => [...p, currentLMSLesson.id]);
-                              }
-                            }}
-                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold cursor-pointer"
-                          >
-                            ✔ Mark Lecture Done
-                          </button>
+                        <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-500"
+                            style={{ width: `${Math.min(100, ((lmsCompletedLessons.filter(l => l.startsWith(activeLMSCourse.id)).length + (isCertUnlocked ? 1 : 0)) / 3) * 100)}%` }}
+                          ></div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Bookmarks, Student Notes & Discussion forum */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* TWO-COLUMN LAYOUT: Left sidebar navigation + Right active workspace */}
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                       
-                      {/* Active Bookmarks */}
-                      <div className={`p-4 border rounded-xl ${
-                        darkMode ? "bg-[#111928] border-slate-800" : "bg-white border-slate-100"
-                      }`}>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-cyan-400 mb-3">Saved Video Bookmarks</h4>
-                        <div className="space-y-2 text-xs">
-                          {lmsBookmarks.length === 0 ? (
-                            <span className="text-slate-500 italic">No bookmarks created during study session.</span>
-                          ) : (
-                            lmsBookmarks.map((b, idx) => (
-                              <div key={idx} className="p-2 bg-slate-50 dark:bg-slate-900 rounded border border-slate-100 dark:border-slate-800">
-                                {b}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
+                      {/* Left Navigation Column: 16 Steps grouped */}
+                      <div className="lg:col-span-1 space-y-4">
+                        <div className={`p-4 border rounded-2xl ${
+                          darkMode ? "bg-[#111928] border-slate-800" : "bg-white border-slate-100"
+                        } space-y-4 shadow-sm`}>
+                          
+                          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block border-b border-slate-800/60 pb-2">
+                            📚 Learning Path Steps
+                          </span>
 
-                      {/* AI Interactive Assistant Sandbox / Course Copilot */}
-                      <div className={`p-4 border rounded-xl ${
-                        darkMode ? "bg-[#111928] border-slate-800" : "bg-white border-slate-100"
-                      }`}>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-orange-400 mb-2 flex items-center gap-1">
-                          <Sparkles className="w-3.5 h-3.5" /> EnoTech AI Copilot & Tutor
-                        </h4>
-                        <div className="space-y-3">
-                          <div className="h-36 overflow-y-auto bg-slate-50 dark:bg-slate-900 rounded p-3 text-[11px] font-sans space-y-2">
-                            {chatHistory.map((ch, i) => (
-                              <div key={i} className={ch.role === "user" ? "text-right" : "text-left"}>
-                                <span className={`inline-block p-2 rounded-lg leading-relaxed ${
-                                  ch.role === "user" ? "bg-blue-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200"
-                                }`}>
-                                  {ch.content}
+                          <div className="space-y-4">
+                            {curriculumStepGroups.map((group, gIdx) => (
+                              <div key={gIdx} className="space-y-1">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block px-2 mb-1.5">
+                                  {group.group}
                                 </span>
+                                <div className="space-y-0.5">
+                                  {group.items.map((item) => {
+                                    const Icon = item.icon;
+                                    const isSelected = activeCurriculumTab === item.id;
+                                    return (
+                                      <button
+                                        key={item.id}
+                                        onClick={() => {
+                                          setActiveCurriculumTab(item.id);
+                                          setCheckedKnowledge(null);
+                                        }}
+                                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                                          isSelected
+                                            ? "bg-blue-600 text-white shadow-md"
+                                            : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                                        }`}
+                                      >
+                                        <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                                        <span className="truncate">{item.label}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             ))}
-                            {isChatLoading && (
-                              <span className="text-slate-500 italic block">Gemini thinking...</span>
-                            )}
                           </div>
-                          
-                          <form onSubmit={handleSendChatMessage} className="flex gap-2">
-                            <input
-                              type="text"
-                              value={chatMessage}
-                              onChange={(e) => setChatMessage(e.target.value)}
-                              placeholder="Ask tutor for help with code..."
-                              className="flex-1 bg-transparent border rounded p-1.5 text-xs focus:outline-none"
-                            />
-                            <button type="submit" className="px-3 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold">
-                              Send
-                            </button>
-                          </form>
+
                         </div>
                       </div>
 
-                    </div>
+                      {/* Right Workspace Column: Active step workspace */}
+                      <div className="lg:col-span-3 space-y-6">
+                        
+                        {/* 1. COURSE OVERVIEW */}
+                        {activeCurriculumTab === "overview" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-2">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 1 • COURSE OVERVIEW
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Academic Overview</h3>
+                              <p className="text-xs text-slate-300 leading-relaxed">{curriculumData.overview.description}</p>
+                            </div>
 
-                  </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-b border-slate-800/60 py-4 text-xs">
+                              <div className="space-y-1">
+                                <span className="text-slate-400 block font-semibold">Duration Length</span>
+                                <span className="text-sm font-bold text-white">{curriculumData.overview.duration}</span>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-slate-400 block font-semibold">Tuition Scale</span>
+                                <span className="text-sm font-bold text-emerald-400 font-mono">{curriculumData.overview.fees}</span>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-slate-400 block font-semibold">Complexity Level</span>
+                                <span className="text-sm font-bold text-cyan-400">{curriculumData.overview.level}</span>
+                              </div>
+                            </div>
 
-                  {/* Right Column: Module & Syllabus Navigation */}
-                  <div className="space-y-4">
-                    <div className={`p-4 border rounded-xl ${
-                      darkMode ? "bg-[#111928] border-slate-800" : "bg-white border-slate-100"
-                    }`}>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Course Syllabus modules</h3>
-                      <div className="space-y-4">
-                        {activeLMSCourse.modules.map((mod, modIdx) => (
-                          <div key={mod.id} className="space-y-1.5">
-                            <span className="text-[11px] font-bold text-blue-500 block">{mod.title}</span>
+                            <div className="space-y-3">
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">What You Will Earn</h4>
+                              <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center gap-3">
+                                <GraduationCap className="w-8 h-8 text-amber-400 flex-shrink-0" />
+                                <div className="space-y-0.5 text-xs">
+                                  <span className="font-bold text-white block">Official EnoTech Professional Certificate</span>
+                                  <p className="text-[11px] text-slate-400 leading-relaxed">Pass the final exam in this track to earn a verified professional credential signed by Director Enock Omato.</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                              <button
+                                onClick={() => setActiveCurriculumTab("lessons")}
+                                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white text-xs font-black rounded-lg cursor-pointer hover:shadow"
+                              >
+                                Start Learning Now
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. LEARNING OBJECTIVES */}
+                        {activeCurriculumTab === "objectives" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
                             <div className="space-y-1">
-                              {mod.lessons.map((les, lesIdx) => {
-                                const isSelected = activeLMSModuleIdx === modIdx && activeLMSLessonIdx === lesIdx;
-                                const isDone = lmsCompletedLessons.includes(les.id);
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 2 • LEARNING OBJECTIVES
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Core Competency Checklist</h3>
+                              <p className="text-xs text-slate-400">Track your technical mastery of the syllabus criteria. Check them off once mastered.</p>
+                            </div>
+
+                            <div className="space-y-3 pt-2">
+                              {curriculumData.objectives.map((obj, idx) => {
+                                const objId = `${activeLMSCourse.id}-obj-${idx}`;
+                                const isChecked = completedObjectives.includes(objId);
                                 return (
-                                  <button
-                                    key={les.id}
+                                  <div 
+                                    key={idx} 
                                     onClick={() => {
-                                      setActiveLMSModuleIdx(modIdx);
-                                      setActiveLMSLessonIdx(lesIdx);
+                                      if (isChecked) {
+                                        setCompletedObjectives(p => p.filter(x => x !== objId));
+                                      } else {
+                                        setCompletedObjectives(p => [...p, objId]);
+                                      }
                                     }}
-                                    className={`w-full flex items-center justify-between text-left p-2 rounded text-xs font-semibold ${
-                                      isSelected 
-                                        ? "bg-blue-600 text-white shadow" 
-                                        : "bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 text-slate-400 hover:text-slate-200"
+                                    className={`p-3.5 border rounded-xl flex items-start gap-3 cursor-pointer transition-all ${
+                                      isChecked 
+                                        ? "bg-blue-600/10 border-blue-500/30 text-white" 
+                                        : "bg-slate-900/40 border-slate-800 text-slate-300 hover:border-slate-700"
                                     }`}
                                   >
-                                    <span className="truncate flex-1 pr-2">{les.title}</span>
-                                    {isDone && <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />}
-                                  </button>
+                                    <div className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center border transition-all ${
+                                      isChecked ? "bg-blue-500 border-blue-400" : "border-slate-600 bg-transparent"
+                                    }`}>
+                                      {isChecked && <Check className="w-3 h-3 text-white" />}
+                                    </div>
+                                    <span className="text-xs font-semibold leading-relaxed">{obj}</span>
+                                  </div>
                                 );
                               })}
                             </div>
+
+                            <div className="text-xs text-slate-400 font-bold">
+                              {completedObjectives.filter(o => o.startsWith(activeLMSCourse.id)).length} of {curriculumData.objectives.length} Competencies Mastered
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                        )}
 
-                    {/* AI Exam / Practice Quiz Generation tools */}
-                    <div className={`p-4 border rounded-xl ${
-                      darkMode ? "bg-[#111928] border-slate-800" : "bg-white border-slate-100"
-                    }`}>
-                      <span className="text-[11px] font-extrabold uppercase tracking-widest text-orange-500 block mb-1">AI-Powered Exercises</span>
-                      <h4 className="text-xs font-bold leading-snug">Generate a customized quiz from notes for {activeLMSCourse.name}</h4>
-                      
-                      <div className="mt-3.5 space-y-2">
-                        <button
-                          onClick={() => handleGenerateAIQuiz(activeLMSCourse.id, "Syntax basics & structures")}
-                          disabled={isGeneratingQuiz}
-                          className="w-full py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white text-xs font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          {isGeneratingQuiz ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-orange-300" />} Generate Quiz Now
-                        </button>
-                      </div>
+                        {/* 3. PREREQUISITES */}
+                        {activeCurriculumTab === "prerequisites" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-1">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 3 • PREREQUISITES
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Recommended Academic Entry</h3>
+                              <p className="text-xs text-slate-400">Before diving in, confirm you satisfy these initial background constraints:</p>
+                            </div>
 
-                      {/* Display the active generated quiz */}
-                      {generatedQuiz && (
-                        <div className="mt-4 p-3 bg-slate-950/60 rounded-lg border border-slate-800/80 space-y-3 text-xs">
-                          <span className="font-bold text-white block">Quiz: {generatedQuiz.quizTitle}</span>
-                          
-                          {generatedQuiz.questions.map((q: any, qIdx: number) => (
-                            <div key={qIdx} className="space-y-1 border-t border-slate-800/60 pt-2 first:border-0 first:pt-0">
-                              <p className="font-semibold text-slate-300">{qIdx + 1}. {q.questionText}</p>
-                              <div className="space-y-1">
-                                {q.options.map((opt: string, oIdx: number) => {
-                                  const isChecked = userQuizAnswers[qIdx] === oIdx;
-                                  return (
-                                    <label key={oIdx} className="flex items-center gap-1.5 cursor-pointer hover:text-white">
-                                      <input
-                                        type="radio"
-                                        name={`q-${qIdx}`}
-                                        checked={isChecked}
-                                        onChange={() => {
-                                          const next = [...userQuizAnswers];
-                                          next[qIdx] = oIdx;
-                                          setUserQuizAnswers(next);
+                            <div className="space-y-4 pt-2">
+                              <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+                                <span className="text-xs font-black text-cyan-400 uppercase tracking-wider block">Essential Prerequisites</span>
+                                <ul className="space-y-2 text-xs">
+                                  {curriculumData.prerequisites.map((p, idx) => (
+                                    <li key={idx} className="flex items-center gap-2 text-slate-300">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                                      <span>{p}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+
+                              <div className="p-4 bg-slate-900/20 border border-dashed border-slate-800 rounded-xl flex items-start gap-3">
+                                <AlertTriangle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
+                                <div className="space-y-1 text-xs">
+                                  <span className="font-bold text-slate-200">Need a Quick Refresher?</span>
+                                  <p className="text-[11px] text-slate-400 leading-relaxed">If you feel unready, you can open our interactive AI Mentor assistance tab at any time to catch up on base terminology offline.</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 4. INTERACTIVE LESSONS */}
+                        {activeCurriculumTab === "lessons" && (
+                          <div className="space-y-6">
+                            
+                            {/* Lesson Player Frame */}
+                            <div className={`border rounded-2xl overflow-hidden shadow-lg ${
+                              darkMode ? "bg-[#0d1322] border-slate-800" : "bg-white border-slate-100"
+                            }`}>
+                              <div className="p-4 bg-slate-950/60 border-b border-slate-800 flex justify-between items-center text-xs">
+                                <span className="font-bold text-white">Lecture Workspace Video</span>
+                                <span className="text-cyan-400 font-bold">{currentLMSLesson?.title || "No active lesson chosen"}</span>
+                              </div>
+
+                              {currentLMSLesson?.type === "video" ? (
+                                downloadedLessons.includes(currentLMSLesson.id) ? (
+                                  /* OFFLINE INTEGRATED PLAYER NODE */
+                                  <div className="relative aspect-video bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-6 flex flex-col justify-between overflow-hidden group select-none">
+                                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(6,182,212,0.1),transparent_50%)]"></div>
+                                    <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-10">
+                                      <span className="px-2.5 py-1 bg-cyan-500/10 border border-cyan-400/20 text-cyan-400 rounded text-[9px] font-extrabold uppercase tracking-widest flex items-center gap-1.5 shadow-sm">
+                                        <WifiOff className="w-3 h-3 text-cyan-400 animate-pulse" /> OFFLINE PLAYBACK SYSTEM ACTIVE
+                                      </span>
+                                      <span className="text-[10px] font-bold text-slate-500 font-mono">
+                                        local_cache_{currentLMSLesson.id}.bin
+                                      </span>
+                                    </div>
+
+                                    <div className="flex-1 flex flex-col items-center justify-center space-y-3 z-10">
+                                      <button
+                                        onClick={() => setOfflinePlaying(!offlinePlaying)}
+                                        className={`w-16 h-16 rounded-full flex items-center justify-center shadow-xl transition-all border transform hover:scale-105 active:scale-95 ${
+                                          offlinePlaying 
+                                            ? "bg-slate-850 border-cyan-500/30 text-cyan-400 hover:bg-slate-800" 
+                                            : "bg-cyan-500 border-cyan-400 text-slate-950 hover:bg-cyan-400"
+                                        }`}
+                                      >
+                                        {offlinePlaying ? (
+                                          <div className="flex gap-1.5 items-center justify-center">
+                                            <span className="w-1.5 h-6 bg-cyan-400 rounded animate-pulse"></span>
+                                            <span className="w-1.5 h-6 bg-cyan-400 rounded animate-pulse delay-75"></span>
+                                          </div>
+                                        ) : (
+                                          <Play className="w-7 h-7 fill-slate-950 ml-1" />
+                                        )}
+                                      </button>
+                                      <span className="text-[11px] font-extrabold text-slate-400 tracking-wide uppercase">
+                                        {offlinePlaying ? "Playing offline lecture track..." : "Offline Video Lecture Loaded"}
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-2 z-10">
+                                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono">
+                                        <span>{Math.floor((offlineProgress * 12) / 60)}:{(offlineProgress * 12) % 60 < 10 ? "0" : ""}{(offlineProgress * 12) % 60}</span>
+                                        <span className="text-cyan-400">offline source • 100% synced</span>
+                                        <span>{currentLMSLesson.duration || "10:00"}</span>
+                                      </div>
+                                      <div className="relative w-full h-1.5 bg-slate-850 rounded-full overflow-hidden cursor-pointer">
+                                        <div 
+                                          className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300" 
+                                          style={{ width: `${offlineProgress}%` }}
+                                        ></div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="relative aspect-video bg-black">
+                                    <iframe
+                                      title="lms-video"
+                                      src={currentLMSLesson.url}
+                                      className="w-full h-full border-none"
+                                      allowFullScreen
+                                    />
+                                  </div>
+                                )
+                              ) : (
+                                <div className="p-8 space-y-4 text-xs">
+                                  <div className="flex items-center gap-2 text-blue-500">
+                                    <FileText className="w-6 h-6" />
+                                    <h3 className="font-bold text-sm">Interactive Lesson Manual</h3>
+                                  </div>
+                                  <p className="text-xs leading-relaxed text-slate-300 whitespace-pre-wrap">
+                                    {currentLMSLesson?.content || "No document loaded for this lecture."}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Speed/Control bar */}
+                              <div className="p-4 bg-slate-950/60 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4">
+                                <div className="flex items-center gap-3 text-xs">
+                                  <span className="text-slate-400">Speed Control:</span>
+                                  <div className="flex gap-1.5">
+                                    {[1, 1.25, 1.5, 2].map((sp) => (
+                                      <button
+                                        key={sp}
+                                        onClick={() => setVideoPlaybackSpeed(sp)}
+                                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                          videoPlaybackSpeed === sp ? "bg-cyan-500 text-slate-950" : "bg-slate-800 text-slate-400"
+                                        }`}
+                                      >
+                                        {sp}x
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 flex-wrap text-xs">
+                                  {currentLMSLesson && (
+                                    downloadedLessons.includes(currentLMSLesson.id) ? (
+                                      <span className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-md font-bold flex items-center gap-1 shadow-sm">
+                                        <CheckCircle className="w-3.5 h-3.5 text-cyan-400" /> Offline Downloaded
+                                      </span>
+                                    ) : isDownloadingLesson === currentLMSLesson.id ? (
+                                      <button disabled className="px-3 py-1.5 bg-slate-800 text-slate-400 rounded-md font-bold flex items-center gap-1.5">
+                                        <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" /> Caching Local Node (64%)...
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => {
+                                          setIsDownloadingLesson(currentLMSLesson.id);
+                                          setTimeout(() => {
+                                            setDownloadedLessons((prev) => [...prev, currentLMSLesson.id]);
+                                            setIsDownloadingLesson(null);
+                                            alert(`Lecture "${currentLMSLesson.title}" downloaded and stored in offline localStorage node memory cache!`);
+                                          }, 1200);
                                         }}
-                                        disabled={quizSubmitted}
-                                        className="accent-cyan-400"
-                                      />
+                                        className="px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-md font-bold flex items-center gap-1 shadow transition-all cursor-pointer"
+                                      >
+                                        <Download className="w-3.5 h-3.5" /> Download Offline
+                                      </button>
+                                    )
+                                  )}
+
+                                  <button
+                                    onClick={() => {
+                                      const bmk = `Bookmark: ${currentLMSLesson?.title} (${new Date().toLocaleTimeString()})`;
+                                      setLmsBookmarks((p) => [...p, bmk]);
+                                      alert("Video Bookmark Saved at timestamp!");
+                                    }}
+                                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded font-bold cursor-pointer"
+                                  >
+                                    🔖 Add Bookmark
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (currentLMSLesson) {
+                                        setLmsCompletedLessons((p) => [...p, currentLMSLesson.id]);
+                                        alert("Lesson completed! Progress recorded in academic history.");
+                                      }
+                                    }}
+                                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold cursor-pointer"
+                                  >
+                                    ✔ Mark Done
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Syllabus modules accordion list nested cleanly inside the Interactive Lessons tab */}
+                            <div className={`p-4 border rounded-2xl ${
+                              darkMode ? "bg-[#111928] border-slate-800" : "bg-white border-slate-100"
+                            }`}>
+                              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Course Syllabus Modules</h3>
+                              <div className="space-y-4">
+                                {activeLMSCourse.modules.map((mod, modIdx) => (
+                                  <div key={mod.id} className="space-y-1.5 border-t border-slate-800/40 pt-3 first:border-0 first:pt-0">
+                                    <span className="text-[11px] font-black text-blue-500 block uppercase tracking-wider">{mod.title}</span>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                      {mod.lessons.map((les, lesIdx) => {
+                                        const isSelected = activeLMSModuleIdx === modIdx && activeLMSLessonIdx === lesIdx;
+                                        const isDone = lmsCompletedLessons.includes(les.id);
+                                        return (
+                                          <button
+                                            key={les.id}
+                                            onClick={() => {
+                                              setActiveLMSModuleIdx(modIdx);
+                                              setActiveLMSLessonIdx(lesIdx);
+                                            }}
+                                            className={`flex items-center justify-between text-left p-2.5 rounded-lg text-xs font-bold transition-all ${
+                                              isSelected 
+                                                ? "bg-blue-600 text-white shadow-md" 
+                                                : "bg-slate-900/40 hover:bg-slate-850 text-slate-400 hover:text-slate-200 border border-slate-800"
+                                            }`}
+                                          >
+                                            <span className="truncate flex-1 pr-2">{les.title}</span>
+                                            {isDone && <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                          </div>
+                        )}
+
+                        {/* 5. READING MATERIALS */}
+                        {activeCurriculumTab === "reading" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-1">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 5 • READING MATERIALS
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Manuals & Study Reference Sheets</h3>
+                              <p className="text-xs text-slate-400">Thoroughly review this documentation file during your study session:</p>
+                            </div>
+
+                            <div className="space-y-4 pt-2">
+                              {curriculumData.readings.map((r, idx) => (
+                                <div key={idx} className="p-5 bg-slate-950/40 border border-slate-800 rounded-xl space-y-3">
+                                  <h4 className="text-xs font-black text-cyan-400 uppercase tracking-widest">{r.title}</h4>
+                                  <p className="text-xs leading-relaxed text-slate-300 whitespace-pre-wrap border-t border-slate-800/80 pt-3">{r.content}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 6. DOWNLOADABLE RESOURCES */}
+                        {activeCurriculumTab === "resources" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-1">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 6 • DOWNLOADABLE RESOURCES
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Reference Toolkits & Cheatsheets</h3>
+                              <p className="text-xs text-slate-400">Save these official resources locally on your laptop for offline reference:</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                              {curriculumData.resources.map((r, idx) => (
+                                <div key={idx} className="p-4 bg-slate-950/40 border border-slate-800 rounded-xl flex items-center justify-between gap-3 text-xs">
+                                  <div className="space-y-1 min-w-0">
+                                    <span className="font-bold text-white block truncate">{r.title}</span>
+                                    <span className="text-[10px] text-slate-500 font-mono block">{r.filename} • {r.size}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => alert(`Beginning download stream for ${r.filename}... Saved!`)}
+                                    className="p-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-lg flex items-center justify-center cursor-pointer flex-shrink-0 transition-colors"
+                                    title="Download Resource"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 7. AI MENTOR ASSISTANCE */}
+                        {activeCurriculumTab === "ai-mentor" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-1">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 7 • AI MENTOR ASSISTANCE
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">EnoTech AI Copilot Workspace</h3>
+                              <p className="text-xs text-slate-400 font-semibold">Stuck on a concept? Consult our server-side intelligent academic mentor.</p>
+                            </div>
+
+                            <div className="space-y-4">
+                              {/* Dedicated chat history display */}
+                              <div className="h-48 overflow-y-auto bg-slate-950/60 rounded-xl p-4 text-xs space-y-3 border border-slate-850">
+                                {chatHistory.map((ch, i) => (
+                                  <div key={i} className={ch.role === "user" ? "text-right" : "text-left"}>
+                                    <span className={`inline-block p-2.5 rounded-xl leading-relaxed max-w-[80%] ${
+                                      ch.role === "user" 
+                                        ? "bg-blue-600 text-white" 
+                                        : "bg-slate-800 text-slate-200 border border-slate-700/50"
+                                    }`}>
+                                      {ch.content}
+                                    </span>
+                                  </div>
+                                ))}
+                                {isChatLoading && (
+                                  <span className="text-slate-500 italic block font-mono">Connecting to Gemini Engine...</span>
+                                )}
+                              </div>
+
+                              {/* Form */}
+                              <form onSubmit={handleSendChatMessage} className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={chatMessage}
+                                  onChange={(e) => setChatMessage(e.target.value)}
+                                  placeholder="Ask tutor for help, e.g. 'Explain risk frameworks'..."
+                                  className="flex-1 bg-slate-950/60 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                                />
+                                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold cursor-pointer">
+                                  Send
+                                </button>
+                              </form>
+
+                              {/* Pre-loaded quick prompts */}
+                              <div className="space-y-1.5 pt-2">
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Quick Study Prompts</span>
+                                <div className="flex flex-wrap gap-2 text-[10px]">
+                                  {[
+                                    `Explain core objectives of ${activeLMSCourse.name}`,
+                                    "Give me an active real-world study scenario",
+                                    "What is an audit check sheet for this subject?"
+                                  ].map((prompt, pIdx) => (
+                                    <button
+                                      key={pIdx}
+                                      onClick={() => {
+                                        setChatMessage(prompt);
+                                        alert("Prompt preloaded. Click send to query tutor.");
+                                      }}
+                                      className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 text-slate-300 rounded hover:text-white hover:border-slate-700 cursor-pointer transition-colors"
+                                    >
+                                      💬 {prompt}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 8. HANDS-ON LABS */}
+                        {activeCurriculumTab === "labs" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-1">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 8 • HANDS-ON LABS
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Virtual Lab Terminal Simulator</h3>
+                              <p className="text-xs text-slate-400">Complete laboratory instruction checklists below inside our sandbox terminal emulator.</p>
+                            </div>
+
+                            {/* Lab instructions */}
+                            <div className="p-4 bg-slate-900/60 border border-slate-850 rounded-xl space-y-2 text-xs">
+                              <span className="font-bold text-orange-400 block uppercase tracking-wider text-[11px]">Lab Project: {curriculumData.labs[0].title}</span>
+                              <p className="text-[11px] text-slate-300 leading-relaxed">{curriculumData.labs[0].description}</p>
+                              <div className="text-[10px] text-slate-400 border-t border-slate-800/80 pt-2 font-mono whitespace-pre-wrap leading-relaxed">
+                                {curriculumData.labs[0].instructions}
+                              </div>
+                            </div>
+
+                            {/* Terminal Simulator screen */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                                <span>interactive_shell_v1.0.sh</span>
+                                <span className="text-cyan-400 animate-pulse">● CONSOLE ONLINE</span>
+                              </div>
+                              
+                              <div className="p-4 bg-black border border-slate-800 rounded-xl font-mono text-xs text-emerald-400 space-y-2 h-44 overflow-y-auto shadow-inner">
+                                {terminalLogs.map((log, idx) => (
+                                  <div key={idx} className="whitespace-pre-wrap leading-relaxed">{log}</div>
+                                ))}
+                              </div>
+
+                              {/* Terminal Form Input */}
+                              <form onSubmit={handleTerminalSubmit} className="flex gap-2 font-mono">
+                                <span className="text-slate-400 self-center text-xs pl-2 font-black">$</span>
+                                <input
+                                  type="text"
+                                  value={terminalInput}
+                                  onChange={(e) => setTerminalInput(e.target.value)}
+                                  placeholder="Type terminal command here (e.g. 'help', 'nmap -ss', 'exploit', 'diagnostics')..."
+                                  className="flex-1 bg-black border border-slate-800 rounded-lg p-2 text-xs text-emerald-400 focus:outline-none focus:border-cyan-500"
+                                />
+                                <button type="submit" className="px-3 bg-slate-850 border border-slate-800 hover:bg-slate-800 text-slate-200 rounded-lg text-xs font-bold cursor-pointer">
+                                  Run
+                                </button>
+                              </form>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 9. CODING CHALLENGES */}
+                        {activeCurriculumTab === "challenges" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-1">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 9 • CODING CHALLENGES
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Syllabus Practical Sandbox</h3>
+                              <p className="text-xs text-slate-400">Write, test, and run code routines inside the interactive evaluation sandbox.</p>
+                            </div>
+
+                            {/* Challenge Instructions */}
+                            <div className="p-4 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1 text-xs">
+                              <span className="font-bold text-white block">Puzzle: {curriculumData.challenges[0].title}</span>
+                              <p className="text-[11px] text-slate-400 leading-relaxed">{curriculumData.challenges[0].description}</p>
+                              <span className="text-[10px] font-mono font-bold text-cyan-400 block mt-1">Expected Output: "{curriculumData.challenges[0].expectedOutput}"</span>
+                            </div>
+
+                            {/* Sandbox Editor textarea */}
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                                <span>main.{curriculumData.challenges[0].language === "javascript" ? "js" : "py"}</span>
+                                <span className="uppercase text-yellow-500 font-bold">{curriculumData.challenges[0].language} workspace</span>
+                              </div>
+                              <textarea
+                                value={codingSandboxCode || curriculumData.challenges[0].starterCode}
+                                onChange={(e) => setCodingSandboxCode(e.target.value)}
+                                className="w-full h-36 bg-slate-950 font-mono text-xs text-slate-100 p-4 border border-slate-800 rounded-xl focus:outline-none focus:border-cyan-500 leading-relaxed shadow-inner"
+                              />
+
+                              <div className="flex justify-end gap-2 text-xs">
+                                <button
+                                  onClick={() => {
+                                    setCodingSandboxCode(curriculumData.challenges[0].starterCode);
+                                    setCodingSandboxOutput("");
+                                  }}
+                                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg cursor-pointer"
+                                >
+                                  Reset Starter Code
+                                </button>
+                                <button
+                                  onClick={() => handleRunCodingChallenge(codingSandboxCode || curriculumData.challenges[0].starterCode, curriculumData.challenges[0].expectedOutput)}
+                                  disabled={isCodingRunning}
+                                  className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg cursor-pointer"
+                                >
+                                  {isCodingRunning ? "Verifying..." : "Run Code & Verify"}
+                                </button>
+                              </div>
+
+                              {/* Console Output area */}
+                              {codingSandboxOutput && (
+                                <div className="space-y-1.5">
+                                  <span className="text-[10px] text-slate-500 font-mono block">Compiler Output Log:</span>
+                                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl font-mono text-xs text-cyan-400 whitespace-pre-wrap leading-relaxed shadow-inner">
+                                    {codingSandboxOutput}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 10. KNOWLEDGE CHECKS */}
+                        {activeCurriculumTab === "knowledge" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-1">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 10 • KNOWLEDGE CHECKS
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Diagnostic Quick Check</h3>
+                              <p className="text-xs text-slate-400">Answer the following conceptual checklist question to lock in your understanding:</p>
+                            </div>
+
+                            <div className="p-5 bg-slate-900/40 border border-slate-800 rounded-xl space-y-4 text-xs">
+                              <span className="font-bold text-white block leading-relaxed">{curriculumData.knowledgeCheck.question}</span>
+                              
+                              <div className="space-y-2">
+                                {curriculumData.knowledgeCheck.options.map((opt, oIdx) => {
+                                  const isSelected = checkedKnowledge === oIdx;
+                                  return (
+                                    <button
+                                      key={oIdx}
+                                      onClick={() => setCheckedKnowledge(oIdx)}
+                                      className={`w-full flex items-center gap-3 p-3 rounded-lg text-left font-semibold border transition-all cursor-pointer ${
+                                        isSelected 
+                                          ? "bg-blue-600/10 border-blue-500/40 text-blue-400" 
+                                          : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
+                                      }`}
+                                    >
+                                      <span className="w-5 h-5 rounded-full border border-slate-700 flex items-center justify-center text-[10px] font-bold font-mono">
+                                        {String.fromCharCode(65 + oIdx)}
+                                      </span>
                                       <span>{opt}</span>
-                                    </label>
+                                    </button>
                                   );
                                 })}
                               </div>
-                            </div>
-                          ))}
 
-                          {!quizSubmitted ? (
-                            <button
-                              onClick={() => setQuizSubmitted(true)}
-                              className="w-full py-1.5 bg-cyan-500 text-slate-950 font-bold rounded"
-                            >
-                              Submit Answers
-                            </button>
-                          ) : (
-                            <div className="space-y-2 pt-2 border-t border-slate-800 text-[11px]">
-                              <span className="font-bold text-emerald-400 block">Quiz Graded!</span>
-                              {generatedQuiz.questions.map((q: any, qIdx: number) => {
-                                const ans = userQuizAnswers[qIdx];
-                                const isCorrect = ans === q.correctOptionIndex;
+                              {checkedKnowledge !== null && (() => {
+                                const isCorrect = checkedKnowledge === curriculumData.knowledgeCheck.answerIndex;
                                 return (
-                                  <div key={qIdx} className="p-1.5 bg-slate-900 rounded">
-                                    <span className={isCorrect ? "text-emerald-400" : "text-rose-400"}>
-                                      {isCorrect ? "✔ Correct" : "❌ Incorrect"}
+                                  <div className={`p-4 rounded-xl border space-y-1 ${
+                                    isCorrect 
+                                      ? "bg-emerald-500/10 border-emerald-500/30 text-white" 
+                                      : "bg-rose-500/10 border-rose-500/30 text-white"
+                                  }`}>
+                                    <span className="font-bold block text-sm">
+                                      {isCorrect ? "✔ Spot On! Correct Answer" : "❌ Incorrect, Try Again"}
                                     </span>
-                                    <p className="text-slate-400 italic">{q.explanation}</p>
+                                    <p className="text-[11px] text-slate-300 leading-relaxed italic">{curriculumData.knowledgeCheck.explanation}</p>
                                   </div>
                                 );
-                              })}
+                              })()}
                             </div>
-                          )}
-                        </div>
-                      )}
+                          </div>
+                        )}
+
+                        {/* 11. MODULE QUIZZES */}
+                        {activeCurriculumTab === "quizzes" && (() => {
+                          const courseId = activeLMSCourse.id;
+                          const answers = quizAnswers[courseId] || {};
+                          const scoreRecord = quizScores[courseId];
+                          return (
+                            <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                              <div className="space-y-1">
+                                <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                  STEP 11 • MODULE QUIZZES
+                                  </span>
+                                <h3 className="text-lg font-black tracking-tight mt-1">Module Concept Evaluation</h3>
+                                <p className="text-xs text-slate-400">Complete this comprehensive module quiz to evaluate your understanding:</p>
+                              </div>
+
+                              <div className="space-y-5 pt-2 text-xs">
+                                {curriculumData.quizzes.map((q, qIdx) => (
+                                  <div key={qIdx} className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl space-y-3">
+                                    <span className="font-bold text-white block leading-relaxed">{qIdx + 1}. {q.question}</span>
+                                    
+                                    <div className="space-y-2">
+                                      {q.options.map((opt, oIdx) => {
+                                        const isSelected = answers[qIdx] === oIdx;
+                                        return (
+                                          <button
+                                            key={oIdx}
+                                            disabled={scoreRecord?.submitted}
+                                            onClick={() => handleQuizAnswerSelect(qIdx, oIdx)}
+                                            className={`w-full flex items-center gap-3 p-2.5 rounded-lg text-left font-semibold border transition-all cursor-pointer ${
+                                              isSelected 
+                                                ? "bg-blue-600/10 border-blue-500/40 text-blue-400" 
+                                                : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
+                                            }`}
+                                          >
+                                            <span className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] font-bold font-mono">
+                                              {String.fromCharCode(65 + oIdx)}
+                                            </span>
+                                            <span>{opt}</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+
+                                {!scoreRecord?.submitted ? (
+                                  <button
+                                    onClick={() => handleQuizSubmit(curriculumData.quizzes)}
+                                    className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg cursor-pointer transition-colors shadow"
+                                  >
+                                    Submit Quiz Answers
+                                  </button>
+                                ) : (
+                                  <div className="p-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-white space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <span className="font-bold text-sm block">Quiz Results Graded!</span>
+                                        <p className="text-[11px] text-slate-300">Your answers have been stored inside your transcript file.</p>
+                                      </div>
+                                      <span className="text-xl font-black text-emerald-400 font-mono">
+                                        {scoreRecord.score} / {scoreRecord.total} ({Math.round((scoreRecord.score / scoreRecord.total) * 100)}%)
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-2 border-t border-emerald-500/20 pt-3">
+                                      {curriculumData.quizzes.map((q, idx) => {
+                                        const ans = answers[idx];
+                                        const isCorrect = ans === q.answerIndex;
+                                        return (
+                                          <div key={idx} className="p-2 bg-slate-950/40 rounded border border-slate-800 text-[11px] leading-relaxed">
+                                            <span className={isCorrect ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                                              {isCorrect ? "✔ Correct" : "❌ Incorrect"}
+                                            </span>
+                                            <p className="text-slate-400 italic mt-0.5">{q.explanation}</p>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* 12. PRACTICAL ASSIGNMENTS */}
+                        {activeCurriculumTab === "assignments" && (() => {
+                          const courseId = activeLMSCourse.id;
+                          const sub = practicalSubmissions[courseId];
+                          return (
+                            <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                              <div className="space-y-1">
+                                <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                  STEP 12 • PRACTICAL ASSIGNMENTS
+                                </span>
+                                <h3 className="text-lg font-black tracking-tight mt-1">Practical Assignment Submissions</h3>
+                                <p className="text-xs text-slate-400">Complete the homework prompt below and upload your solution document:</p>
+                              </div>
+
+                              <div className="p-4 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1.5 text-xs">
+                                <span className="font-bold text-white block">Assignment: {curriculumData.assignment.title}</span>
+                                <p className="text-[11px] text-slate-300 leading-relaxed">{curriculumData.assignment.prompt}</p>
+                                <span className="text-[10px] font-mono text-slate-500 block font-bold">Max Grade Scale: {curriculumData.assignment.maxScore} points</span>
+                              </div>
+
+                              {/* Interactive File Drag and Drop */}
+                              <div className="space-y-4">
+                                <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider block">Submission Portal</span>
+                                
+                                {!sub?.submitted ? (
+                                  <div className="border-2 border-dashed border-slate-800 rounded-xl p-6 text-center space-y-3 bg-slate-950/20 hover:bg-slate-950/40 hover:border-slate-700 transition-colors cursor-pointer relative group">
+                                    <input 
+                                      type="file" 
+                                      onChange={handleAssignmentFileUpload}
+                                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
+                                    />
+                                    <ClipboardList className="w-8 h-8 text-slate-500 mx-auto group-hover:scale-105 transition-transform" />
+                                    <div className="space-y-1 text-xs">
+                                      <span className="font-bold text-slate-300 block">Drag & Drop assignment file here, or click to browse</span>
+                                      <p className="text-[10px] text-slate-500">Supports PDF, DOCX, TXT, or ZIP archives (max 10MB)</p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-3 text-xs">
+                                    <div className="space-y-1">
+                                      <span className="font-bold text-white block">File: {sub.fileName}</span>
+                                      <span className="text-[10px] text-emerald-400 font-bold block">Status: Graded Automatically ({sub.score}/{curriculumData.assignment.maxScore} pts)</span>
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        setPracticalSubmissions(p => {
+                                          const next = { ...p };
+                                          delete next[courseId];
+                                          return next;
+                                        });
+                                      }}
+                                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-[10px] font-bold text-slate-300 cursor-pointer"
+                                    >
+                                      Submit New File
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* 13. FINAL CAPSTONE PROJECT */}
+                        {activeCurriculumTab === "capstone" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-1">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 13 • FINAL CAPSTONE PROJECT
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Final Graduation Capstone Portfolio</h3>
+                              <p className="text-xs text-slate-400">Synthesize everything you have learned to build a comprehensive real-world project:</p>
+                            </div>
+
+                            <div className="p-5 bg-slate-900/40 border border-slate-800 rounded-xl space-y-4 text-xs">
+                              <div className="space-y-1">
+                                <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Project Focus: {curriculumData.capstone.title}</span>
+                                <p className="text-xs text-slate-300 leading-relaxed">{curriculumData.capstone.instructions}</p>
+                              </div>
+
+                              <div className="border-t border-slate-800/80 pt-3 space-y-2">
+                                <span className="font-bold text-white block">Evaluation Criteria & Requirements:</span>
+                                <ul className="space-y-1.5 list-disc pl-4 text-slate-400 text-[11px]">
+                                  {curriculumData.capstone.requirements.map((req, idx) => (
+                                    <li key={idx}>{req}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+
+                            <div className="p-4 border-2 border-dashed border-slate-800 rounded-xl text-center text-xs space-y-2 text-slate-400 bg-slate-950/25">
+                              <p className="font-bold">Ready to Submit your Capstone Portfolio?</p>
+                              <button
+                                onClick={() => alert("Capstone Project uploaded! Our director Dr. Enock Omato will audit your codebase offline and grade within 48 hours.")}
+                                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[10px] font-black cursor-pointer transition-all"
+                              >
+                                Upload Capstone Zip File
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 14. FINAL ASSESSMENT */}
+                        {activeCurriculumTab === "assessment" && (() => {
+                          const courseId = activeLMSCourse.id;
+                          const submitted = assessmentSubmitted[courseId];
+                          const answers = assessmentAnswers[courseId] || {};
+                          return (
+                            <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                              <div className="space-y-1">
+                                <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                  STEP 14 • FINAL ASSESSMENT
+                                </span>
+                                <h3 className="text-lg font-black tracking-tight mt-1">Official Course Graduation Exam</h3>
+                                <p className="text-xs text-slate-400">Achieve a score of 70% or higher to pass, unlock the course completion milestone, and generate your printable certificate.</p>
+                              </div>
+
+                              <div className="space-y-4 pt-2 text-xs">
+                                {curriculumData.assessment.map((q, qIdx) => (
+                                  <div key={qIdx} className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl space-y-3">
+                                    <span className="font-bold text-white block leading-relaxed">{qIdx + 1}. {q.question}</span>
+                                    
+                                    <div className="space-y-2">
+                                      {q.options.map((opt, oIdx) => {
+                                        const isSelected = answers[qIdx] === oIdx;
+                                        return (
+                                          <button
+                                            key={oIdx}
+                                            disabled={submitted}
+                                            onClick={() => handleAssessmentAnswerSelect(qIdx, oIdx)}
+                                            className={`w-full flex items-center gap-3 p-2.5 rounded-lg text-left font-semibold border transition-all cursor-pointer ${
+                                              isSelected 
+                                                ? "bg-blue-600/10 border-blue-500/40 text-blue-400" 
+                                                : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
+                                            }`}
+                                          >
+                                            <span className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] font-bold font-mono">
+                                              {String.fromCharCode(65 + oIdx)}
+                                            </span>
+                                            <span>{opt}</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+
+                                {!submitted ? (
+                                  <button
+                                    onClick={() => handleAssessmentSubmit(curriculumData.assessment)}
+                                    className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black rounded-lg cursor-pointer transition-colors shadow"
+                                  >
+                                    Submit Final Graduation Exam
+                                  </button>
+                                ) : (
+                                  <div className="p-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-white space-y-3">
+                                    <span className="font-bold text-sm block">Graduation Exam Passed!</span>
+                                    <p className="text-[11px] text-slate-300">Score Recorded: 100% (Passed). Your Professional Certificate has been generated! Head to the Graduation tab on the left to print or download your credential.</p>
+                                    <button
+                                      onClick={() => setActiveCurriculumTab("certificate")}
+                                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold transition-all cursor-pointer"
+                                    >
+                                      View Certificate Now
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* 15. CERTIFICATE OF COMPLETION */}
+                        {activeCurriculumTab === "certificate" && (() => {
+                          const courseId = activeLMSCourse.id;
+                          const unlocked = isCertUnlocked;
+                          const certHash = `ETA-${courseId}-${activeLMSCourse.totalFees}`;
+                          const dateToday = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+                          return (
+                            <div className="space-y-6">
+                              {!unlocked ? (
+                                <div className={`p-8 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} text-center space-y-4 shadow-sm`}>
+                                  <Lock className="w-12 h-12 text-slate-600 mx-auto animate-pulse" />
+                                  <div className="space-y-1 max-w-sm mx-auto text-xs">
+                                    <span className="font-black text-sm block">Certificate of Completion Locked</span>
+                                    <p className="text-slate-400 leading-relaxed">Complete at least 2 video/text lectures and submit the Final Assessment exam to generate your official signed EnoTech credential.</p>
+                                  </div>
+                                  <button
+                                    onClick={() => setActiveCurriculumTab("assessment")}
+                                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-lg text-xs font-bold cursor-pointer"
+                                  >
+                                    Go Complete Assessment Exam
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="space-y-4">
+                                  {/* Print Certificate Area */}
+                                  <div id="enotech-certificate" className="p-8 border-[6px] border-double border-amber-600/60 rounded-3xl bg-slate-950 text-center relative overflow-hidden text-white shadow-2xl">
+                                    {/* Watermark/Flourish backdrop */}
+                                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(217,119,6,0.04),transparent_70%)]"></div>
+                                    <div className="absolute top-0 bottom-0 left-4 right-4 border border-amber-600/20 pointer-events-none"></div>
+
+                                    <div className="relative space-y-6">
+                                      <div className="space-y-1">
+                                        <GraduationCap className="w-12 h-12 text-amber-500 mx-auto" />
+                                        <span className="text-xs font-bold uppercase tracking-widest text-amber-500 font-mono">EnoTech Academy</span>
+                                        <p className="text-[9px] text-slate-400 font-mono">KENDU BAY CAMPUS • OFFLINE PROFESSIONAL CREDENTIAL</p>
+                                      </div>
+
+                                      <div className="space-y-1">
+                                        <h2 className="text-xl font-black font-serif text-amber-200 tracking-tight">CERTIFICATE OF EXCELLENCE</h2>
+                                        <span className="text-[10px] text-slate-400 italic font-serif">This academic document proudly verifies that</span>
+                                      </div>
+
+                                      <div className="border-b border-amber-600/30 max-w-md mx-auto pb-1.5">
+                                        <h3 className="text-lg font-black text-white font-serif tracking-tight">Enock Omato Jr</h3>
+                                      </div>
+
+                                      <div className="max-w-md mx-auto text-[11px] text-slate-300 leading-relaxed">
+                                        has successfully completed all laboratory exercises, capstone evaluations, and theoretical syllabus criteria required for the expert completion of:
+                                        <span className="font-bold text-amber-300 block mt-1.5 text-xs tracking-tight">{activeLMSCourse.name}</span>
+                                      </div>
+
+                                      <div className="grid grid-cols-2 max-w-md mx-auto gap-8 pt-4 border-t border-slate-900 text-left text-[10px]">
+                                        <div className="space-y-1 border-t border-amber-600/30 pt-2 text-center">
+                                          <span className="font-serif italic text-white block">Enock Omato</span>
+                                          <span className="text-[9px] text-slate-400 font-semibold block">DIRECTOR & PRINCIPAL FOUNDER</span>
+                                        </div>
+                                        <div className="space-y-1 border-t border-amber-600/30 pt-2 text-center">
+                                          <span className="font-serif text-white block font-semibold">{dateToday}</span>
+                                          <span className="text-[9px] text-slate-400 font-semibold block">DATE OF GRADUATION ISSUANCE</span>
+                                        </div>
+                                      </div>
+
+                                      <div className="pt-2 text-[9px] text-slate-500 font-mono flex items-center justify-center gap-1.5">
+                                        <span>Credential UID:</span>
+                                        <span className="font-bold text-slate-400">{certHash}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Print Action */}
+                                  <div className="flex justify-end">
+                                    <button
+                                      onClick={() => {
+                                        window.print();
+                                      }}
+                                      className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 text-white text-xs font-bold rounded-lg cursor-pointer hover:shadow transition-shadow"
+                                    >
+                                      <Printer className="w-4 h-4" /> Print Certificate as PDF
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* 16. SUGGESTED NEXT COURSE */}
+                        {activeCurriculumTab === "next-course" && (
+                          <div className={`p-6 border rounded-2xl ${darkMode ? "bg-[#111928] border-slate-800 text-white" : "bg-white border-slate-100"} space-y-6 shadow-sm`}>
+                            <div className="space-y-1">
+                              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                                STEP 16 • SUGGESTED NEXT COURSE
+                              </span>
+                              <h3 className="text-lg font-black tracking-tight mt-1">Recommended Next Academic Milestones</h3>
+                              <p className="text-xs text-slate-400">Continue your career roadmap by enrolling in the logical progression course:</p>
+                            </div>
+
+                            <div className="p-5 bg-slate-950/60 border border-slate-800 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+                              <div className="space-y-1 max-w-md">
+                                <span className="text-[10px] font-bold uppercase text-amber-500 tracking-wider block font-mono">Suggested Career Track</span>
+                                <span className="font-black text-sm text-white block">{curriculumData.suggestedNextCourse.name}</span>
+                                <p className="text-[11px] text-slate-400 leading-relaxed">Advance your technical capacity with structural modules, terminal labs, and deep offensive/defensive assessments.</p>
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  const nextC = courses.find((c) => c.id === curriculumData.suggestedNextCourse.id);
+                                  if (nextC) {
+                                    setActiveLMSCourse(nextC);
+                                    setActiveLMSModuleIdx(0);
+                                    setActiveLMSLessonIdx(0);
+                                    setActiveCurriculumTab("overview");
+                                    setCheckedKnowledge(null);
+                                    alert(`Enrolled and launched: "${nextC.name}"! Welcome to your next career track.`);
+                                  } else {
+                                    alert(`Course ${curriculumData.suggestedNextCourse.name} is configured inside our university syllabus. Click 'Mass-Inject 27 Univ Courses' in the catalog first to unlock it!`);
+                                  }
+                                }}
+                                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-black rounded-lg cursor-pointer transition-transform text-[11px] uppercase tracking-wide flex items-center gap-1.5"
+                              >
+                                Enroll Now <ChevronRight className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                      </div>
                     </div>
                   </div>
-
-                </div>
-              )}
+                );
+              })()}
 
             </div>
           )}

@@ -16,6 +16,7 @@ import {
   Announcement,
   SystemLog,
 } from "../types";
+import { ALL_COURSES_FROM_CATALOG } from "../data/coursesCatalog";
 
 // Helper to get from local storage or return default
 const getStored = <T>(key: string, defaultValue: T): T => {
@@ -1093,14 +1094,15 @@ export const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
 export class EnoTechDatabase {
   static getCourses(): Course[] {
     const stored = getStored("courses", [] as Course[]);
+    const combinedDefaults = [...DEFAULT_COURSES, ...ALL_COURSES_FROM_CATALOG];
     if (stored.length === 0) {
-      setStored("courses", DEFAULT_COURSES);
-      return DEFAULT_COURSES;
+      setStored("courses", combinedDefaults);
+      return combinedDefaults;
     }
     // Automatically merge new default courses that are missing from localStorage
     let updated = [...stored];
     let changed = false;
-    DEFAULT_COURSES.forEach((c) => {
+    combinedDefaults.forEach((c) => {
       if (!updated.some((uc) => uc.id === c.id)) {
         updated.push(c);
         changed = true;
